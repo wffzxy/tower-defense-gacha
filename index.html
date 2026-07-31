@@ -276,9 +276,12 @@ class GameScene extends Phaser.Scene {
     
     this.drawBackground();
     
-    // 用 raw canvas 事件代替 Phaser 输入系统（更可靠）
+    // 禁用 Phaser 内置输入，改用 raw canvas 事件（更可靠）
+    this.input.enabled = false;
+    
     const canvas = this.sys.game.canvas;
     canvas.style.cursor = 'crosshair';
+    canvas.style.pointerEvents = 'auto';
     
     this.mouseX = 0;
     this.mouseY = 0;
