@@ -476,6 +476,7 @@ class GameScene extends Phaser.Scene {
   onMonsterReachBase(m) {
     const dmg = Math.max(1, Math.floor(m.def.hp / 40));
     state.baseHp -= dmg;
+    state.monstersAlive--;
     const bp = this.waypoints[this.waypoints.length - 1];
     this.showFloatingText(bp.x, bp.y - 30, `-${dmg}🏰`, 0xe74c3c);
     if (state.baseHp <= 0) {
