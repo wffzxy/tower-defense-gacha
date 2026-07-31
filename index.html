@@ -1,82 +1,921 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>塔防抽卡 · Tower Defense Gacha</title>
-  <link rel="stylesheet" href="./src/ui/hud.css" />
+<meta charset="UTF-8">
+<title>塔防抽卡游戏</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #eee; font-family: 'Microsoft YaHei', sans-serif; overflow: hidden; }
+  #game-wrap { display: flex; height: 100vh; }
+  #game-canvas { flex: 1; position: relative; }
+  #sidebar { width: 340px; background: #16213e; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  .panel { background: #0f3460; border-radius: 8px; padding: 10px; }
+  .panel h3 { font-size: 13px; margin-bottom: 8px; color: #e94560; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 13px; margin: 4px 0; }
+  .stat-row span:last-child { color: #feca57; font-weight: bold; }
+  .btn { background: #e94560; color: white; border: none; border-radius: 6px; padding: 8px 12px; cursor: pointer; font-size: 13px; margin: 2px; transition: all 0.2s; }
+  .btn:hover { background: #ff6b81; transform: translateY(-1px); }
+  .btn:disabled { background: #555; cursor: not-allowed; transform: none; }
+  .btn-secondary { background: #0f9b58; }
+  .btn-secondary:hover { background: #12b866; }
+  .btn-blue { background: #3498db; }
+  .btn-blue:hover { background: #5dade2; }
+  .btn-small { padding: 4px 8px; font-size: 11px; }
+  .inventory-item { background: #1a1a40; border: 2px solid transparent; border-radius: 6px; padding: 6px; margin: 4px 0; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 12px; transition: all 0.2s; }
+  .inventory-item:hover { border-color: #e94560; background: #2a2a50; }
+  .inventory-item.selected { border-color: #feca57; background: #2a2a50; }
+  .inventory-item .rarity-common { color: #bbb; }
+  .inventory-item .rarity-rare { color: #3498db; }
+  .inventory-item .rarity-epic { color: #9b59b6; }
+  .log { font-size: 11px; color: #aaa; max-height: 80px; overflow-y: auto; }
+  .card-preview { background: #2a2a50; border-radius: 6px; padding: 8px; margin: 4px 0; font-size: 12px; }
+  .category-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-right: 4px; }
+  .cat-fort { background: #e74c3c; color: white; }
+  .cat-function { background: #3498db; color: white; }
+  .cat-support { background: #f39c12; color: white; }
+  .cat-mine { background: #f1c40f; color: #333; }
+  #overlay { position: absolute; top: 0; left: 0; right: 340px; bottom: 0; pointer-events: none; }
+  #gameover { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.9); padding: 30px 50px; border-radius: 12px; text-align: center; display: none; z-index: 100; pointer-events: auto; }
+  #gameover h2 { font-size: 28px; color: #e94560; margin-bottom: 15px; }
+  #gameover p { font-size: 16px; margin: 8px 0; }
+  .tower-info { font-size: 11px; color: #bbb; margin-top: 4px; }
+</style>
 </head>
 <body>
-  <div id="app">
-    <div id="game-container"></div>
-
-    <!-- 顶部 HUD -->
-    <div id="hud-top" class="hud-bar">
-      <div class="stat">
-        <span class="stat-icon gold">💰</span>
-        <span class="stat-label">金币</span>
-        <span id="stat-gold" class="stat-value">0</span>
-      </div>
-      <div class="stat">
-        <span class="stat-icon score">⭐</span>
-        <span class="stat-label">积分</span>
-        <span id="stat-score" class="stat-value">0</span>
-      </div>
-      <div class="stat">
-        <span class="stat-icon wave">🌊</span>
-        <span class="stat-label">波次</span>
-        <span id="stat-wave" class="stat-value">0</span>
-      </div>
-      <div class="stat">
-        <span class="stat-icon base">🏰</span>
-        <span class="stat-label">基地</span>
-        <span id="stat-base" class="stat-value">20</span>
-      </div>
-      <div class="stat-group">
-        <button id="btn-gacha-normal" class="btn btn-gacha">普通抽卡 (10)</button>
-        <button id="btn-gacha-rare" class="btn btn-gacha rare">高级抽卡 (50)</button>
-        <button id="btn-start-wave" class="btn btn-wave">下一波</button>
-        <button id="btn-pause" class="btn btn-ghost">暂停</button>
-      </div>
+<div id="game-wrap">
+  <div id="game-canvas">
+    <div id="overlay"></div>
+    <div id="gameover">
+      <h2 id="gameover-title">游戏结束</h2>
+      <p id="gameover-stats"></p>
+      <button class="btn btn-secondary" onclick="location.reload()">重新开始</button>
     </div>
-
-    <!-- 底部塔栏 -->
-    <div id="hud-bottom" class="hud-bar bottom">
-      <div id="inventory" class="inventory">
-        <div class="inv-empty">点击「抽卡」获得塔，再点击背包中的塔放置到地图</div>
-      </div>
-      <div id="tower-info" class="tower-info hidden">
-        <div class="ti-title" id="ti-name"></div>
-        <div class="ti-row"><span>类型</span><span id="ti-type"></span></div>
-        <div class="ti-row"><span>稀有度</span><span id="ti-rarity"></span></div>
-        <div class="ti-row"><span>说明</span><span id="ti-desc"></span></div>
-        <div class="ti-row"><span>花费</span><span id="ti-cost"></span></div>
-        <button id="btn-sell" class="btn btn-sell">出售 (返还50%)</button>
-      </div>
-    </div>
-
-    <!-- 抽卡结果弹窗 -->
-    <div id="gacha-modal" class="modal hidden">
-      <div class="modal-content">
-        <h2>抽卡结果</h2>
-        <div id="gacha-result"></div>
-        <button id="btn-close-gacha" class="btn btn-primary">确认</button>
-      </div>
-    </div>
-
-    <!-- 游戏结束弹窗 -->
-    <div id="gameover-modal" class="modal hidden">
-      <div class="modal-content">
-        <h2 id="gameover-title">游戏结束</h2>
-        <div id="gameover-summary"></div>
-        <button id="btn-restart" class="btn btn-primary">重新开始</button>
-      </div>
-    </div>
-
-    <!-- 提示 toast -->
-    <div id="toast" class="toast hidden"></div>
   </div>
+  <div id="sidebar">
+    <div class="panel">
+      <h3>🏰 基地状态</h3>
+      <div class="stat-row"><span>❤️ 基地血量</span><span id="stat-hp">20/20</span></div>
+      <div class="stat-row"><span>💰 金币</span><span id="stat-gold">80</span></div>
+      <div class="stat-row"><span>⭐ 积分</span><span id="stat-score">0</span></div>
+      <div class="stat-row"><span>🌊 当前波次</span><span id="stat-wave">0</span></div>
+    </div>
 
-  <script type="module" src="/src/main.ts"></script>
+    <div class="panel">
+      <h3>🎯 波次控制</h3>
+      <button class="btn btn-secondary" id="btn-start-wave" style="width:100%">开始下一波</button>
+      <button class="btn btn-blue" id="btn-pause" style="width:100%;margin-top:4px;">暂停</button>
+    </div>
+
+    <div class="panel">
+      <h3>🎴 抽卡</h3>
+      <button class="btn" id="btn-gacha-normal" style="width:100%">普通抽卡 (10💰)</button>
+      <button class="btn btn-blue" id="btn-gacha-rare" style="width:100%;margin-top:4px;">高级抽卡 (50💰)</button>
+    </div>
+
+    <div class="panel">
+      <h3>📦 背包 <span id="inv-count" style="font-size:11px;color:#888"></span></h3>
+      <div id="inventory-list"></div>
+    </div>
+
+    <div class="panel" id="tower-detail-panel" style="display:none">
+      <h3>🔍 塔详情</h3>
+      <div id="tower-detail"></div>
+      <button class="btn" id="btn-sell-tower" style="width:100%;margin-top:6px;">出售</button>
+    </div>
+
+    <div class="panel">
+      <h3>📖 操作说明</h3>
+      <div style="font-size:11px;color:#aaa;line-height:1.5">
+        1. 用金币抽卡获得塔<br>
+        2. 点击背包中的卡选中<br>
+        3. 在空地上点击放置<br>
+        4. 击杀怪物获得积分金币<br>
+        5. 点击已放置的塔可出售
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+<script>
+// ============ 数据定义 ============
+const MONSTERS = {
+  slime: { kind: 'slime', name: '史莱姆', hp: 40, speed: 60, score: 5, gold: 2, color: 0x7ed957, radius: 14, shape: 'circle' },
+  goblin: { kind: 'goblin', name: '哥布林', hp: 60, speed: 110, score: 8, gold: 3, color: 0xff9f43, radius: 13, shape: 'triangle' },
+  orc: { kind: 'orc', name: '兽人战士', hp: 200, speed: 50, score: 20, gold: 8, color: 0xc44569, radius: 18, shape: 'square' },
+  wraith: { kind: 'wraith', name: '幽魂', hp: 120, speed: 90, score: 25, gold: 10, color: 0xa3a3ff, radius: 15, shape: 'diamond' },
+  dragon: { kind: 'dragon', name: '飞龙', hp: 600, speed: 70, score: 50, gold: 25, color: 0xe84118, radius: 22, shape: 'triangle' },
+  boss: { kind: 'boss', name: '魔王', hp: 3000, speed: 45, score: 200, gold: 100, color: 0x6c5ce7, radius: 30, shape: 'square' }
+};
+
+const TOWERS = [
+  { id: 'arrow_tower', name: '箭塔', category: 'fort', rarity: 'common', cost: 15, desc: '单体远程攻击，攻速快', color: 0x4a90e2, range: 140, damage: 12, fireRate: 2.0, projSpeed: 400 },
+  { id: 'cannon_tower', name: '炮塔', category: 'fort', rarity: 'rare', cost: 35, desc: '范围爆炸伤害', color: 0xd4a373, range: 120, damage: 35, fireRate: 0.7, projSpeed: 280, splash: 50 },
+  { id: 'mage_tower', name: '魔法塔', category: 'fort', rarity: 'rare', cost: 45, desc: '魔法穿透攻击', color: 0xb388ff, range: 160, damage: 28, fireRate: 1.2, projSpeed: 500 },
+  { id: 'sniper_tower', name: '狙击塔', category: 'fort', rarity: 'epic', cost: 80, desc: '超远射程，高额爆发', color: 0x00b894, range: 280, damage: 120, fireRate: 0.5, projSpeed: 800 },
+  { id: 'frost_tower', name: '冰霜塔', category: 'function', rarity: 'common', cost: 20, desc: '减速命中怪物', color: 0x74b9ff, range: 130, damage: 6, fireRate: 1.5, projSpeed: 350, slowFactor: 0.5, slowDuration: 2000 },
+  { id: 'poison_tower', name: '毒塔', category: 'function', rarity: 'rare', cost: 40, desc: '持续中毒伤害', color: 0x55efc4, range: 140, damage: 8, fireRate: 1.0, projSpeed: 350, dot: 12, dotDuration: 3000 },
+  { id: 'tesla_tower', name: '雷电塔', category: 'function', rarity: 'epic', cost: 75, desc: '连锁攻击多目标', color: 0xfdcb6e, range: 150, damage: 25, fireRate: 1.0, projSpeed: 800, chain: 3 },
+  { id: 'drum_tower', name: '战鼓塔', category: 'support', rarity: 'rare', cost: 50, desc: '范围内塔伤害+25%', color: 0xe17055, range: 0, damage: 0, buffRange: 110, buffDamage: 0.25 },
+  { id: 'beacon_tower', name: '灯塔', category: 'support', rarity: 'epic', cost: 70, desc: '范围内塔射程+30%', color: 0xffeaa7, range: 0, damage: 0, buffRange: 120, buffRangeBonus: 0.3 },
+  { id: 'gold_mine', name: '金矿', category: 'mine', rarity: 'common', cost: 25, desc: '每5秒产5金币', color: 0xf1c40f, range: 0, damage: 0, goldPerTick: 5, tickInterval: 5000 },
+  { id: 'rich_mine', name: '富矿', category: 'mine', rarity: 'rare', cost: 60, desc: '每6秒产15金币', color: 0xf39c12, range: 0, damage: 0, goldPerTick: 15, tickInterval: 6000 },
+  { id: 'soul_mine', name: '魂矿', category: 'mine', rarity: 'epic', cost: 90, desc: '每7秒产10金币+20%积分', color: 0x9b59b6, range: 0, damage: 0, goldPerTick: 10, tickInterval: 7000, scoreBonus: 0.2 }
+];
+
+const TOWER_MAP = {};
+TOWERS.forEach(t => TOWER_MAP[t.id] = t);
+
+const GACHA_POOL = {
+  normal: [
+    { id: 'arrow_tower', weight: 35 },
+    { id: 'frost_tower', weight: 25 },
+    { id: 'gold_mine', weight: 25 },
+    { id: 'cannon_tower', weight: 8 },
+    { id: 'poison_tower', weight: 5 },
+    { id: 'mage_tower', weight: 2 }
+  ],
+  rare: [
+    { id: 'cannon_tower', weight: 25 },
+    { id: 'mage_tower', weight: 20 },
+    { id: 'poison_tower', weight: 15 },
+    { id: 'drum_tower', weight: 12 },
+    { id: 'rich_mine', weight: 10 },
+    { id: 'sniper_tower', weight: 8 },
+    { id: 'tesla_tower', weight: 6 },
+    { id: 'beacon_tower', weight: 3 },
+    { id: 'soul_mine', weight: 1 }
+  ]
+};
+
+const WAVES = [
+  { wave: 1, reward: 10, spawns: [{ kind: 'slime', count: 8, interval: 800, delay: 0 }] },
+  { wave: 2, reward: 12, spawns: [{ kind: 'slime', count: 10, interval: 700, delay: 0 }, { kind: 'goblin', count: 4, interval: 600, delay: 4000 }] },
+  { wave: 3, reward: 15, spawns: [{ kind: 'goblin', count: 12, interval: 500, delay: 0 }] },
+  { wave: 4, reward: 18, spawns: [{ kind: 'slime', count: 8, interval: 400, delay: 0 }, { kind: 'orc', count: 3, interval: 1500, delay: 3000 }] },
+  { wave: 5, reward: 30, spawns: [{ kind: 'goblin', count: 10, interval: 400, delay: 0 }, { kind: 'orc', count: 4, interval: 1200, delay: 2000 }, { kind: 'boss', count: 1, interval: 1000, delay: 8000 }] },
+  { wave: 6, reward: 25, spawns: [{ kind: 'wraith', count: 12, interval: 500, delay: 0 }] },
+  { wave: 7, reward: 28, spawns: [{ kind: 'orc', count: 6, interval: 900, delay: 0 }, { kind: 'wraith', count: 8, interval: 600, delay: 3000 }] },
+  { wave: 8, reward: 35, spawns: [{ kind: 'slime', count: 20, interval: 250, delay: 0 }, { kind: 'dragon', count: 1, interval: 1000, delay: 5000 }] },
+  { wave: 9, reward: 40, spawns: [{ kind: 'wraith', count: 15, interval: 400, delay: 0 }, { kind: 'orc', count: 6, interval: 800, delay: 2000 }] },
+  { wave: 10, reward: 80, spawns: [{ kind: 'dragon', count: 2, interval: 3000, delay: 0 }, { kind: 'orc', count: 8, interval: 600, delay: 1000 }, { kind: 'boss', count: 1, interval: 1000, delay: 10000 }] },
+  { wave: 11, reward: 50, spawns: [{ kind: 'dragon', count: 3, interval: 2500, delay: 0 }, { kind: 'wraith', count: 12, interval: 400, delay: 2000 }] },
+  { wave: 12, reward: 100, spawns: [{ kind: 'dragon', count: 4, interval: 2000, delay: 0 }, { kind: 'boss', count: 2, interval: 5000, delay: 8000 }] }
+];
+
+// ============ 路径系统 ============
+function buildPath(w, h) {
+  const margin = 60;
+  return [
+    { x: -20, y: h * 0.25 },
+    { x: w * 0.25, y: h * 0.25 },
+    { x: w * 0.25, y: h * 0.75 },
+    { x: w * 0.55, y: h * 0.75 },
+    { x: w * 0.55, y: h * 0.25 },
+    { x: w * 0.8, y: h * 0.25 },
+    { x: w * 0.8, y: h * 0.5 },
+    { x: w + 20, y: h * 0.5 }
+  ];
+}
+
+function pointToSegmentDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const cx = ax + t * dx, cy = ay + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+function isOnPath(x, y, waypoints, pathWidth = 36) {
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    if (pointToSegmentDist(x, y, waypoints[i].x, waypoints[i].y, waypoints[i + 1].x, waypoints[i + 1].y) < pathWidth) return true;
+  }
+  return false;
+}
+
+// ============ 游戏状态 ============
+const state = {
+  gold: 80,
+  score: 0,
+  baseHp: 20,
+  maxBaseHp: 20,
+  waveNum: 0,
+  waveActive: false,
+  waveEnded: false,
+  gameOver: false,
+  paused: false,
+  monsters: [],
+  towers: [],
+  inventory: [],
+  spawnQueue: [],
+  waveStartTime: 0,
+  monstersAlive: 0,
+  selectedInvUid: null,
+  selectedTowerId: null,
+  nextMonsterId: 1,
+  nextTowerId: 1,
+  nextUid: 1,
+  floatingTexts: [],
+  beams: [],
+  projectiles: []
+};
+
+function getWave(num) {
+  if (num <= WAVES.length) return WAVES[num - 1];
+  const scale = 1 + (num - WAVES.length) * 0.3;
+  return {
+    wave: num,
+    reward: 50 + (num - WAVES.length) * 10,
+    spawns: [
+      { kind: 'orc', count: Math.floor(5 * scale), interval: 700, delay: 0 },
+      { kind: 'wraith', count: Math.floor(8 * scale), interval: 400, delay: 2000 },
+      { kind: 'dragon', count: Math.floor(2 * scale), interval: 2500, delay: 5000 },
+      { kind: 'boss', count: Math.floor(scale), interval: 5000, delay: 10000 }
+    ]
+  };
+}
+
+// ============ Phaser 场景 ============
+const GAME_W = 900;
+const GAME_H = 650;
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    this.waypoints = buildPath(GAME_W, GAME_H);
+    this.drawPath();
+    this.drawGrid();
+
+    // Input
+    this.input.on('pointerdown', (pointer) => {
+      if (state.gameOver) return;
+      const x = pointer.x, y = pointer.y;
+
+      // Check if clicking on existing tower
+      for (const t of state.towers) {
+        if (Math.hypot(t.x - x, t.y - y) < 20) {
+          state.selectedTowerId = t.id;
+          state.selectedInvUid = null;
+          this.updateSidebar();
+          return;
+        }
+      }
+
+      // Placing tower from inventory
+      if (state.selectedInvUid !== null) {
+        const item = state.inventory.find(i => i.uid === state.selectedInvUid);
+        if (!item) return;
+        if (!this.canPlaceAt(x, y)) {
+          this.showFloatingText(x, y, '❌ 不能放置', 0xff0000);
+          return;
+        }
+        if (state.gold < item.def.cost) {
+          this.showFloatingText(x, y, '💰 金币不足', 0xff0000);
+          return;
+        }
+        state.gold -= item.def.cost;
+        const tower = {
+          id: state.nextTowerId++,
+          def: item.def,
+          x, y,
+          lastFireAt: 0,
+          lastTickAt: performance.now(),
+          targetId: null,
+          cooldownMs: item.def.fireRate ? 1000 / item.def.fireRate : 0
+        };
+        state.towers.push(tower);
+        state.inventory = state.inventory.filter(i => i.uid !== state.selectedInvUid);
+        state.selectedInvUid = null;
+        this.drawTower(tower);
+        this.updateSidebar();
+      }
+    });
+
+    this.updateSidebar();
+  }
+
+  drawGrid() {
+    const g = this.add.graphics();
+    g.lineStyle(1, 0x333355, 0.5);
+    for (let x = 0; x < GAME_W; x += 50) {
+      g.moveTo(x, 0); g.lineTo(x, GAME_H);
+    }
+    for (let y = 0; y < GAME_H; y += 50) {
+      g.moveTo(0, y); g.lineTo(GAME_W, y);
+    }
+    g.strokePath();
+  }
+
+  drawPath() {
+    const g = this.add.graphics();
+    g.lineStyle(48, 0x555577, 0.8);
+    g.beginPath();
+    g.moveTo(this.waypoints[0].x, this.waypoints[0].y);
+    for (let i = 1; i < this.waypoints.length; i++) {
+      g.lineTo(this.waypoints[i].x, this.waypoints[i].y);
+    }
+    g.strokePath();
+
+    g.lineStyle(42, 0x6a6a88, 0.8);
+    g.strokePath();
+
+    // Spawn point
+    const sp = this.waypoints[0];
+    g.fillStyle(0xff6b6b, 0.8);
+    g.fillCircle(sp.x + 20, sp.y, 20);
+
+    // Base
+    const bp = this.waypoints[this.waypoints.length - 1];
+    g.fillStyle(0x4ecdc4, 0.8);
+    g.fillCircle(bp.x - 20, bp.y, 25);
+    g.fillStyle(0xffffff, 1);
+    g.font = 'bold 14px Arial';
+    g.fillText('🏰', bp.x - 28, bp.y - 10);
+  }
+
+  canPlaceAt(x, y) {
+    if (x < 30 || y < 30 || x > GAME_W - 30 || y > GAME_H - 30) return false;
+    if (isOnPath(x, y, this.waypoints)) return false;
+    for (const t of state.towers) {
+      if (Math.hypot(t.x - x, t.y - y) < 32) return false;
+    }
+    return true;
+  }
+
+  drawTower(t) {
+    const g = this.add.graphics();
+    g.fillStyle(t.def.color, 0.9);
+    g.fillCircle(t.x, t.y, 18);
+    g.lineStyle(2, 0xffffff, 1);
+    g.strokeCircle(t.x, t.y, 18);
+
+    // Category icon
+    const icons = { fort: '⚔', function: '❄', support: '⚑', mine: '💰' };
+    g.fillStyle(0xffffff, 1);
+    g.font = '14px Arial';
+    g.fillText(icons[t.def.category] || '?', t.x - 6, t.y - 5);
+
+    // Range indicator (when selected)
+    if (state.selectedTowerId === t.id && t.def.range > 0) {
+      g.lineStyle(1, 0xffff00, 0.3);
+      g.strokeCircle(t.x, t.y, this.effRange(t));
+    }
+  }
+
+  redrawTowers() {
+    // Remove old tower graphics
+    if (this.towerGraphics) this.towerGraphics.clear();
+    else this.towerGraphics = this.add.graphics();
+
+    for (const t of state.towers) {
+      const g = this.towerGraphics;
+      g.fillStyle(t.def.color, 0.9);
+      g.fillCircle(t.x, t.y, 18);
+      g.lineStyle(2, 0xffffff, 1);
+      g.strokeCircle(t.x, t.y, 18);
+
+      const icons = { fort: '⚔', function: '❄', support: '⚑', mine: '💰' };
+      g.fillStyle(0xffffff, 1);
+      g.font = '14px Arial';
+      g.fillText(icons[t.def.category] || '?', t.x - 6, t.y - 5);
+
+      if (state.selectedTowerId === t.id && t.def.range > 0) {
+        g.lineStyle(1, 0xffff00, 0.3);
+        g.strokeCircle(t.x, t.y, this.effRange(t));
+      }
+    }
+  }
+
+  effRange(t) {
+    if (!t.def.range) return 0;
+    let r = t.def.range;
+    for (const o of state.towers) {
+      if (o.def.category !== 'support' || !o.def.buffRangeBonus || !o.def.buffRange) continue;
+      if (Math.hypot(o.x - t.x, o.y - t.y) <= o.def.buffRange) {
+        r = t.def.range * (1 + o.def.buffRangeBonus);
+      }
+    }
+    return r;
+  }
+
+  effDamage(t) {
+    if (!t.def.damage) return 0;
+    let dmg = t.def.damage;
+    for (const o of state.towers) {
+      if (o.def.category !== 'support' || !o.def.buffDamage || !o.def.buffRange) continue;
+      if (Math.hypot(o.x - t.x, o.y - t.y) <= o.def.buffRange) {
+        dmg = t.def.damage * (1 + o.def.buffDamage);
+      }
+    }
+    return dmg;
+  }
+
+  showFloatingText(x, y, text, color) {
+    state.floatingTexts.push({ x, y, text, color, bornAt: performance.now(), ttl: 900 });
+  }
+
+  updateFloatingTexts() {
+    const now = performance.now();
+    state.floatingTexts = state.floatingTexts.filter(t => now - t.bornAt < t.ttl);
+    state.beams = state.beams.filter(b => now - b.bornAt < b.ttl);
+  }
+
+  updateMonsters(dt, now) {
+    const toRemove = [];
+    for (const m of state.monsters) {
+      if (!m.alive) continue;
+      if (m.hp <= 0) {
+        this.killMonster(m, now);
+        toRemove.push(m.id);
+        continue;
+      }
+
+      // DOT
+      if (m.dotPerSec > 0 && now < m.dotEndAt) {
+        m.hp -= m.dotPerSec * dt;
+        if (m.hp <= 0) { this.killMonster(m, now); toRemove.push(m.id); continue; }
+      }
+
+      // Move along path
+      const target = this.nextPathTarget(m.x, m.y, m.pathIndex);
+      if (!target) {
+        this.onMonsterReachBase(m);
+        toRemove.push(m.id);
+        continue;
+      }
+      let speed = m.def.speed;
+      if (now < m.slowUntil) speed *= m.slowFactor;
+      const dx = target.tx - m.x, dy = target.ty - m.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0.1) {
+        const step = Math.min(dist, speed * dt);
+        m.x += (dx / dist) * step;
+        m.y += (dy / dist) * step;
+      }
+      m.pathIndex = target.nextIndex;
+    }
+    if (toRemove.length > 0) {
+      state.monsters = state.monsters.filter(m => !toRemove.includes(m.id));
+    }
+  }
+
+  nextPathTarget(x, y, pathIndex) {
+    if (pathIndex >= this.waypoints.length) return null;
+    const wp = this.waypoints[pathIndex];
+    const dx = wp.x - x, dy = wp.y - y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 4) {
+      const nextIndex = pathIndex + 1;
+      if (nextIndex >= this.waypoints.length) return null;
+      const next = this.waypoints[nextIndex];
+      return { tx: next.x, ty: next.y, nextIndex };
+    }
+    return { tx: wp.x, ty: wp.y, nextIndex: pathIndex };
+  }
+
+  onMonsterReachBase(m) {
+    const dmg = Math.max(1, Math.floor(m.def.hp / 40));
+    state.baseHp -= dmg;
+    this.showFloatingText(this.waypoints[this.waypoints.length - 1].x, this.waypoints[this.waypoints.length - 1].y, `-${dmg}🏰`, 0xe74c3c);
+    if (state.baseHp <= 0) {
+      state.baseHp = 0;
+      state.gameOver = true;
+      this.showGameOver();
+    }
+  }
+
+  killMonster(m, now) {
+    m.alive = false;
+    let score = m.def.score;
+    let gold = m.def.gold;
+    const soulBonus = state.towers.filter(t => t.def.scoreBonus).reduce((s, t) => s + t.def.scoreBonus, 0);
+    score = Math.floor(score * (1 + soulBonus));
+    state.score += score;
+    state.gold += gold;
+    state.monstersAlive--;
+    this.showFloatingText(m.x, m.y, `+${score}⭐`, 0xfeca57);
+    if (gold > 0) this.showFloatingText(m.x, m.y - 14, `+${gold}💰`, 0xf1c40f);
+  }
+
+  updateTowers(now) {
+    for (const t of state.towers) {
+      if (t.def.category === 'mine') {
+        if (now - t.lastTickAt >= t.def.tickInterval) {
+          t.lastTickAt = now;
+          state.gold += t.def.goldPerTick;
+          this.showFloatingText(t.x, t.y - 20, `+${t.def.goldPerTick}💰`, 0xf1c40f);
+        }
+        continue;
+      }
+      if (t.def.category === 'support') continue;
+
+      const effR = this.effRange(t);
+      const effDmg = this.effDamage(t);
+
+      let target = null;
+      let bestProgress = -1;
+      for (const m of state.monsters) {
+        if (!m.alive || m.hp <= 0) continue;
+        const d = Math.hypot(m.x - t.x, m.y - t.y);
+        if (d > effR) continue;
+        const progress = m.pathIndex + (1 - Math.hypot(m.x - this.waypoints[this.waypoints.length - 1].x, m.y - this.waypoints[this.waypoints.length - 1].y) / GAME_W);
+        if (progress > bestProgress) { bestProgress = progress; target = m; }
+      }
+
+      if (target) {
+        t.targetId = target.id;
+        if (now - t.lastFireAt >= t.cooldownMs) {
+          t.lastFireAt = now;
+          this.fireProjectile(t, target, effDmg);
+        }
+      } else {
+        t.targetId = null;
+      }
+    }
+  }
+
+  fireProjectile(t, target, damage) {
+    state.projectiles.push({
+      id: state.nextProjId++,
+      x: t.x, y: t.y,
+      targetId: target.id,
+      speed: t.def.projSpeed || 400,
+      damage,
+      splash: t.def.splash || 0,
+      slowFactor: t.def.slowFactor || 0,
+      slowDuration: t.def.slowDuration || 0,
+      dot: t.def.dot || 0,
+      dotDuration: t.def.dotDuration || 0,
+      chain: t.def.chain || 0,
+      hitIds: [],
+      color: t.def.color,
+      radius: t.def.splash ? 6 : 4,
+      alive: true
+    });
+  }
+
+  updateProjectiles(dt, now) {
+    const toRemove = [];
+    for (const p of state.projectiles) {
+      if (!p.alive) continue;
+      const target = state.monsters.find(m => m.id === p.targetId && m.alive && m.hp > 0);
+      let tx, ty;
+      if (target) {
+        tx = target.x; ty = target.y;
+      } else if (p.chain > 0 && p.hitIds.length < p.chain) {
+        let best = null, bestD = Infinity;
+        for (const m of state.monsters) {
+          if (!m.alive || m.hp <= 0) continue;
+          if (p.hitIds.includes(m.id)) continue;
+          const d = Math.hypot(m.x - p.x, m.y - p.y);
+          if (d < bestD && d < 200) { bestD = d; best = m; }
+        }
+        if (best) { p.targetId = best.id; tx = best.x; ty = best.y; }
+        else { p.alive = false; toRemove.push(p.id); continue; }
+      } else {
+        p.alive = false; toRemove.push(p.id); continue;
+      }
+
+      const dx = tx - p.x, dy = ty - p.y;
+      const dist = Math.hypot(dx, dy);
+      const step = p.speed * dt;
+      if (dist <= step) {
+        this.onProjectileHit(p, target, now);
+        p.alive = false; toRemove.push(p.id);
+      } else {
+        p.x += (dx / dist) * step;
+        p.y += (dy / dist) * step;
+      }
+    }
+    if (toRemove.length > 0) {
+      state.projectiles = state.projectiles.filter(p => !toRemove.includes(p.id));
+    }
+  }
+
+  onProjectileHit(p, primary, now) {
+    const hitSet = new Set([primary.id]);
+    if (p.splash > 0) {
+      for (const m of state.monsters) {
+        if (!m.alive || m.hp <= 0) continue;
+        if (m.id === primary.id) continue;
+        if (Math.hypot(m.x - primary.x, m.y - primary.y) <= p.splash) hitSet.add(m.id);
+      }
+    }
+    if (p.chain > 0) {
+      let chainCount = 0, from = primary;
+      while (chainCount < p.chain) {
+        let best = null, bestD = Infinity;
+        for (const m of state.monsters) {
+          if (!m.alive || m.hp <= 0) continue;
+          if (hitSet.has(m.id)) continue;
+          const d = Math.hypot(m.x - from.x, m.y - from.y);
+          if (d < 150 && d < bestD) { bestD = d; best = m; }
+        }
+        if (!best) break;
+        hitSet.add(best.id);
+        state.beams.push({ fromX: from.x, fromY: from.y, toX: best.x, toY: best.y, color: p.color, bornAt: now, ttl: 120 });
+        from = best;
+        chainCount++;
+      }
+    }
+    for (const id of hitSet) {
+      const m = state.monsters.find(x => x.id === id);
+      if (!m || !m.alive || m.hp <= 0) continue;
+      m.hp -= p.damage;
+      if (p.slowFactor > 0) { m.slowUntil = now + p.slowDuration; m.slowFactor = p.slowFactor; }
+      if (p.dot > 0) { m.dotEndAt = now + p.dotDuration; m.dotPerSec = p.dot; }
+      if (m.hp <= 0) this.killMonster(m, now);
+    }
+  }
+
+  startNextWave() {
+    if (state.waveActive || state.gameOver) return;
+    state.waveNum++;
+    const wave = getWave(state.waveNum);
+    state.waveActive = true;
+    state.waveEnded = false;
+    state.waveStartTime = performance.now();
+    state.monstersAlive = 0;
+    state.spawnQueue = [];
+    for (const spawn of wave.spawns) {
+      for (let i = 0; i < spawn.count; i++) {
+        state.spawnQueue.push({ kind: spawn.kind, at: spawn.delay + i * spawn.interval });
+        state.monstersAlive++;
+      }
+    }
+    state.spawnQueue.sort((a, b) => a.at - b.at);
+    this.showFloatingText(GAME_W / 2, GAME_H / 2, `🌊 波次 ${state.waveNum} 开始!`, 0xe94560);
+  }
+
+  updateSpawns(now) {
+    if (!state.waveActive || state.spawnQueue.length === 0) return;
+    const elapsed = now - state.waveStartTime;
+    while (state.spawnQueue.length > 0 && state.spawnQueue[0].at <= elapsed) {
+      const s = state.spawnQueue.shift();
+      this.spawnMonster(s.kind);
+    }
+  }
+
+  spawnMonster(kind) {
+    const def = MONSTERS[kind];
+    if (!def) return;
+    const sp = this.waypoints[0];
+    state.monsters.push({
+      id: state.nextMonsterId++,
+      def,
+      hp: def.hp,
+      maxHp: def.hp,
+      pathIndex: 0,
+      x: sp.x, y: sp.y,
+      slowUntil: 0, slowFactor: 1,
+      dotEndAt: 0, dotPerSec: 0,
+      alive: true
+    });
+  }
+
+  checkWaveComplete() {
+    if (!state.waveActive || state.waveEnded) return;
+    if (state.spawnQueue.length === 0 && state.monstersAlive <= 0) {
+      state.waveEnded = true;
+      state.waveActive = false;
+      const wave = getWave(state.waveNum);
+      state.gold += wave.reward;
+      this.showFloatingText(GAME_W / 2, GAME_H / 2, `✅ 波次 ${state.waveNum} 完成 +${wave.reward}💰`, 0x2ecc71);
+    }
+  }
+
+  showGameOver() {
+    document.getElementById('gameover').style.display = 'block';
+    document.getElementById('gameover-title').textContent = '💀 游戏结束';
+    document.getElementById('gameover-stats').innerHTML = `
+      最终积分: <strong>${state.score}</strong> ⭐<br>
+      到达波次: <strong>${state.waveNum}</strong> 🌊<br>
+      剩余金币: <strong>${state.gold}</strong> 💰
+    `;
+  }
+
+  updateSidebar() {
+    document.getElementById('stat-hp').textContent = `${state.baseHp}/${state.maxBaseHp}`;
+    document.getElementById('stat-gold').textContent = state.gold;
+    document.getElementById('stat-score').textContent = state.score;
+    document.getElementById('stat-wave').textContent = state.waveNum;
+
+    // Inventory
+    const inv = document.getElementById('inventory-list');
+    document.getElementById('inv-count').textContent = `(${state.inventory.length})`;
+    if (state.inventory.length === 0) {
+      inv.innerHTML = '<div style="font-size:11px;color:#666;text-align:center;padding:10px;">背包空空如也<br>去抽卡吧！</div>';
+    } else {
+      inv.innerHTML = '';
+      for (const item of state.inventory) {
+        const d = item.def;
+        const rarityClass = `rarity-${d.rarity}`;
+        const catName = { fort: '城防', function: '功能', support: '辅助', mine: '金矿' }[d.category];
+        const el = document.createElement('div');
+        el.className = 'inventory-item' + (state.selectedInvUid === item.uid ? ' selected' : '');
+        el.innerHTML = `<span class="${rarityClass}">${d.name}</span><span style="color:#888">[${catName}]</span>`;
+        el.onclick = () => {
+          state.selectedInvUid = item.uid;
+          state.selectedTowerId = null;
+          this.updateSidebar();
+        };
+        inv.appendChild(el);
+      }
+    }
+
+    // Tower detail
+    const detailPanel = document.getElementById('tower-detail-panel');
+    const detailDiv = document.getElementById('tower-detail');
+    if (state.selectedTowerId !== null) {
+      const t = state.towers.find(x => x.id === state.selectedTowerId);
+      if (t) {
+        detailPanel.style.display = 'block';
+        const d = t.def;
+        const catName = { fort: '城防', function: '功能', support: '辅助', mine: '金矿' }[d.category];
+        detailDiv.innerHTML = `
+          <div style="font-weight:bold;color:#feca57;">${d.name}</div>
+          <div class="category-tag cat-${d.category}">${catName}</div>
+          <span style="font-size:11px;color:#888;">${d.desc}</span>
+          <div class="tower-info">${this.getTowerStats(d, t)}</div>
+        `;
+      } else {
+        detailPanel.style.display = 'none';
+      }
+    } else {
+      detailPanel.style.display = 'none';
+    }
+  }
+
+  getTowerStats(def, t) {
+    if (def.category === 'fort' || def.category === 'function') {
+      return `伤害: ${Math.round(this.effDamage(t))} | 射程: ${Math.round(this.effRange(t))} | 攻速: ${def.fireRate}/s`;
+    }
+    if (def.category === 'support') {
+      return `增益范围: ${def.buffRange}`;
+    }
+    if (def.category === 'mine') {
+      return `产出: ${def.goldPerTick}💰/${def.tickInterval / 1000}s`;
+    }
+    return '';
+  }
+
+  update(time, delta) {
+    if (state.paused || state.gameOver) return;
+    const dt = delta / 1000;
+    const now = performance.now();
+
+    this.updateSpawns(now);
+    this.updateMonsters(dt, now);
+    this.updateTowers(now);
+    this.updateProjectiles(dt, now);
+    this.updateFloatingTexts();
+    this.checkWaveComplete();
+    this.redrawTowers();
+    this.updateSidebar();
+  }
+
+  render() {
+    // Clear and redraw game entities
+    if (this.renderGraphics) this.renderGraphics.clear();
+    else this.renderGraphics = this.add.graphics();
+
+    const g = this.renderGraphics;
+    const now = performance.now();
+
+    // Draw monsters
+    for (const m of state.monsters) {
+      if (!m.alive || m.hp <= 0) continue;
+      g.fillStyle(m.def.color, 1);
+      if (m.def.shape === 'circle') g.fillCircle(m.x, m.y, m.def.radius);
+      else if (m.def.shape === 'square') g.fillRect(m.x - m.def.radius, m.y - m.def.radius, m.def.radius * 2, m.def.radius * 2);
+      else if (m.def.shape === 'triangle') {
+        g.beginPath();
+        g.moveTo(m.x, m.y - m.def.radius);
+        g.lineTo(m.x - m.def.radius, m.y + m.def.radius);
+        g.lineTo(m.x + m.def.radius, m.y + m.def.radius);
+        g.closePath();
+        g.fillPath();
+      } else if (m.def.shape === 'diamond') {
+        g.beginPath();
+        g.moveTo(m.x, m.y - m.def.radius);
+        g.lineTo(m.x + m.def.radius, m.y);
+        g.lineTo(m.x, m.y + m.def.radius);
+        g.lineTo(m.x - m.def.radius, m.y);
+        g.closePath();
+        g.fillPath();
+      }
+
+      // HP bar
+      const barW = m.def.radius * 2;
+      const pct = Math.max(0, m.hp / m.maxHp);
+      g.fillStyle(0x333333, 0.8);
+      g.fillRect(m.x - barW / 2, m.y - m.def.radius - 8, barW, 4);
+      g.fillStyle(pct > 0.5 ? 0x2ecc71 : pct > 0.25 ? 0xf39c12 : 0xe74c3c, 1);
+      g.fillRect(m.x - barW / 2, m.y - m.def.radius - 8, barW * pct, 4);
+
+      // Slow effect
+      if (now < m.slowUntil) {
+        g.fillStyle(0x74b9ff, 0.4);
+        g.fillCircle(m.x, m.y, m.def.radius + 4);
+      }
+    }
+
+    // Draw projectiles
+    for (const p of state.projectiles) {
+      if (!p.alive) continue;
+      g.fillStyle(p.color, 1);
+      g.fillCircle(p.x, p.y, p.radius);
+    }
+
+    // Draw beams
+    for (const b of state.beams) {
+      const alpha = 1 - (now - b.bornAt) / b.ttl;
+      g.lineStyle(3, b.color, alpha);
+      g.beginPath();
+      g.moveTo(b.fromX, b.fromY);
+      g.lineTo(b.toX, b.toY);
+      g.strokePath();
+    }
+
+    // Draw floating texts
+    for (const ft of state.floatingTexts) {
+      const alpha = 1 - (now - ft.bornAt) / ft.ttl;
+      const offsetY = -(now - ft.bornAt) * 0.03;
+      g.fillStyle(ft.color, alpha);
+      g.font = 'bold 14px Arial';
+      g.fillText(ft.text, ft.x - 20, ft.y + offsetY);
+    }
+  }
+}
+
+// ============ 启动游戏 ============
+const config = {
+  type: Phaser.AUTO,
+  width: GAME_W,
+  height: GAME_H,
+  scene: [GameScene],
+  backgroundColor: '#1a1a2e'
+};
+
+const game = new Phaser.Game(config);
+
+// UI 事件
+document.getElementById('btn-gacha-normal').onclick = () => {
+  if (state.gold < 10) { alert('💰 金币不足!'); return; }
+  state.gold -= 10;
+  const pool = GACHA_POOL.normal;
+  const total = pool.reduce((s, p) => s + p.weight, 0);
+  let r = Math.random() * total;
+  let picked = pool[0];
+  for (const entry of pool) { r -= entry.weight; if (r <= 0) { picked = entry; break; } }
+  const def = TOWER_MAP[picked.id];
+  state.inventory.push({ uid: state.nextUid++, def });
+  const scene = game.scene.getScene('GameScene');
+  scene.showFloatingText(GAME_W / 2, 40, `获得: ${def.name}`, def.color);
+  scene.updateSidebar();
+};
+
+document.getElementById('btn-gacha-rare').onclick = () => {
+  if (state.gold < 50) { alert('💰 金币不足!'); return; }
+  state.gold -= 50;
+  const pool = GACHA_POOL.rare;
+  const total = pool.reduce((s, p) => s + p.weight, 0);
+  let r = Math.random() * total;
+  let picked = pool[0];
+  for (const entry of pool) { r -= entry.weight; if (r <= 0) { picked = entry; break; } }
+  const def = TOWER_MAP[picked.id];
+  state.inventory.push({ uid: state.nextUid++, def });
+  const scene = game.scene.getScene('GameScene');
+  scene.showFloatingText(GAME_W / 2, 40, `获得: ${def.name} [稀有!]`, def.color);
+  scene.updateSidebar();
+};
+
+document.getElementById('btn-start-wave').onclick = () => {
+  const scene = game.scene.getScene('GameScene');
+  scene.startNextWave();
+};
+
+document.getElementById('btn-pause').onclick = () => {
+  state.paused = !state.paused;
+  document.getElementById('btn-pause').textContent = state.paused ? '▶ 继续' : '⏸ 暂停';
+};
+
+document.getElementById('btn-sell-tower').onclick = () => {
+  if (state.selectedTowerId === null) return;
+  const idx = state.towers.findIndex(t => t.id === state.selectedTowerId);
+  if (idx < 0) return;
+  const t = state.towers[idx];
+  const refund = Math.floor(t.def.cost * 0.5);
+  state.gold += refund;
+  state.towers.splice(idx, 1);
+  state.selectedTowerId = null;
+  const scene = game.scene.getScene('GameScene');
+  scene.showFloatingText(t.x, t.y, `+${refund}💰`, 0xf1c40f);
+  scene.updateSidebar();
+};
+</script>
 </body>
 </html>
