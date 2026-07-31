@@ -9,6 +9,7 @@
   #game-wrap { display: flex; height: 100vh; }
   #game-canvas { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; }
   #phaser-container { position: relative; flex-shrink: 0; width: 900px; height: 650px; }
+  #phaser-container canvas { display: block; }
   #sidebar { width: 340px; background: #16213e; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
   .panel { background: #0f3460; border-radius: 8px; padding: 10px; }
   .panel h3 { font-size: 13px; margin-bottom: 8px; color: #e94560; }
@@ -334,8 +335,8 @@ class GameScene extends Phaser.Scene {
     
     const x = pointer.x;
     const y = pointer.y;
+    console.log('Canvas click:', x, y, 'selectedInvUid:', state.selectedInvUid);
 
-    // 检查是否点击了已放置的塔
     for (const t of state.towers) {
       if (Math.hypot(t.x - x, t.y - y) < 22) {
         state.selectedTowerId = t.id;
@@ -345,7 +346,6 @@ class GameScene extends Phaser.Scene {
       }
     }
 
-    // 如果选中了背包中的塔，尝试放置
     if (state.selectedInvUid !== null) {
       const item = state.inventory.find(i => i.uid === state.selectedInvUid);
       if (!item) return;
@@ -373,8 +373,8 @@ class GameScene extends Phaser.Scene {
       state.inventory = state.inventory.filter(i => i.uid !== state.selectedInvUid);
       state.selectedInvUid = null;
       this.updateSidebar();
+      console.log('Tower placed at:', x, y);
     } else {
-      // 点击空地，取消选择
       state.selectedTowerId = null;
       this.updateSidebar();
     }
@@ -892,6 +892,7 @@ window.addEventListener('load', () => {
 
   const config = {
     type: Phaser.AUTO,
+    parent: 'phaser-container',
     width: GAME_W,
     height: GAME_H,
     scene: [GameScene],
