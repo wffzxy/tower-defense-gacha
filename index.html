@@ -7,7 +7,8 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #1a1a2e; color: #eee; font-family: 'Microsoft YaHei', sans-serif; overflow: hidden; }
   #game-wrap { display: flex; height: 100vh; }
-  #game-canvas { flex: 1; position: relative; }
+  #game-canvas { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; }
+  #phaser-container { position: relative; flex-shrink: 0; width: 900px; height: 650px; }
   #sidebar { width: 340px; background: #16213e; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
   .panel { background: #0f3460; border-radius: 8px; padding: 10px; }
   .panel h3 { font-size: 13px; margin-bottom: 8px; color: #e94560; }
@@ -20,31 +21,40 @@
   .btn-secondary:hover { background: #12b866; }
   .btn-blue { background: #3498db; }
   .btn-blue:hover { background: #5dade2; }
-  .btn-small { padding: 4px 8px; font-size: 11px; }
   .inventory-item { background: #1a1a40; border: 2px solid transparent; border-radius: 6px; padding: 6px; margin: 4px 0; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 12px; transition: all 0.2s; }
   .inventory-item:hover { border-color: #e94560; background: #2a2a50; }
   .inventory-item.selected { border-color: #feca57; background: #2a2a50; }
   .inventory-item .rarity-common { color: #bbb; }
   .inventory-item .rarity-rare { color: #3498db; }
   .inventory-item .rarity-epic { color: #9b59b6; }
-  .log { font-size: 11px; color: #aaa; max-height: 80px; overflow-y: auto; }
-  .card-preview { background: #2a2a50; border-radius: 6px; padding: 8px; margin: 4px 0; font-size: 12px; }
   .category-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-right: 4px; }
   .cat-fort { background: #e74c3c; color: white; }
   .cat-function { background: #3498db; color: white; }
   .cat-support { background: #f39c12; color: white; }
   .cat-mine { background: #f1c40f; color: #333; }
-  #overlay { position: absolute; top: 0; left: 0; right: 340px; bottom: 0; pointer-events: none; }
   #gameover { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.9); padding: 30px 50px; border-radius: 12px; text-align: center; display: none; z-index: 100; pointer-events: auto; }
   #gameover h2 { font-size: 28px; color: #e94560; margin-bottom: 15px; }
   #gameover p { font-size: 16px; margin: 8px 0; }
   .tower-info { font-size: 11px; color: #bbb; margin-top: 4px; }
+  #loading { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #1a1a2e; display: flex; align-items: center; justify-content: center; z-index: 9999; }
+  #loading-content { text-align: center; }
+  #loading h1 { color: #e94560; font-size: 24px; margin-bottom: 10px; }
+  #loading p { color: #aaa; font-size: 14px; }
+  #error-msg { color: #e74c3c; font-size: 14px; display: none; margin-top: 10px; }
 </style>
 </head>
 <body>
-<div id="game-wrap">
+<div id="loading">
+  <div id="loading-content">
+    <h1>⚔️ 塔防抽卡游戏</h1>
+    <p>正在加载游戏...</p>
+    <div id="error-msg">如果长时间无法加载，请确保网络连接正常</div>
+  </div>
+</div>
+
+<div id="game-wrap" style="display:none">
   <div id="game-canvas">
-    <div id="overlay"></div>
+    <div id="phaser-container"></div>
     <div id="gameover">
       <h2 id="gameover-title">游戏结束</h2>
       <p id="gameover-stats"></p>
@@ -95,6 +105,15 @@
     </div>
   </div>
 </div>
+
+<script>
+// 超时检测
+setTimeout(() => {
+  if (typeof Phaser === 'undefined') {
+    document.getElementById('loading-content').innerHTML = '<h1>❌ 加载失败</h1><p>无法加载 Phaser 引擎，请检查网络连接后刷新页面</p>';
+  }
+}, 10000);
+</script>
 
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
 <script>
@@ -165,16 +184,15 @@ const WAVES = [
 
 // ============ 路径系统 ============
 function buildPath(w, h) {
-  const margin = 60;
   return [
-    { x: -20, y: h * 0.25 },
+    { x: 10, y: h * 0.25 },
     { x: w * 0.25, y: h * 0.25 },
     { x: w * 0.25, y: h * 0.75 },
     { x: w * 0.55, y: h * 0.75 },
     { x: w * 0.55, y: h * 0.25 },
     { x: w * 0.8, y: h * 0.25 },
     { x: w * 0.8, y: h * 0.5 },
-    { x: w + 20, y: h * 0.5 }
+    { x: w - 10, y: h * 0.5 }
   ];
 }
 
@@ -217,6 +235,7 @@ const state = {
   nextMonsterId: 1,
   nextTowerId: 1,
   nextUid: 1,
+  nextProjId: 1,
   floatingTexts: [],
   beams: [],
   projectiles: []
@@ -246,60 +265,29 @@ class GameScene extends Phaser.Scene {
 
   create() {
     this.waypoints = buildPath(GAME_W, GAME_H);
-    this.drawPath();
-    this.drawGrid();
-
-    // Input
+    
+    // 创建渲染层（避免每帧重建）
+    this.bgGraphics = this.add.graphics();
+    this.gameGraphics = this.add.graphics();
+    
+    this.drawBackground();
+    
+    // 输入处理
     this.input.on('pointerdown', (pointer) => {
-      if (state.gameOver) return;
-      const x = pointer.x, y = pointer.y;
-
-      // Check if clicking on existing tower
-      for (const t of state.towers) {
-        if (Math.hypot(t.x - x, t.y - y) < 20) {
-          state.selectedTowerId = t.id;
-          state.selectedInvUid = null;
-          this.updateSidebar();
-          return;
-        }
-      }
-
-      // Placing tower from inventory
-      if (state.selectedInvUid !== null) {
-        const item = state.inventory.find(i => i.uid === state.selectedInvUid);
-        if (!item) return;
-        if (!this.canPlaceAt(x, y)) {
-          this.showFloatingText(x, y, '❌ 不能放置', 0xff0000);
-          return;
-        }
-        if (state.gold < item.def.cost) {
-          this.showFloatingText(x, y, '💰 金币不足', 0xff0000);
-          return;
-        }
-        state.gold -= item.def.cost;
-        const tower = {
-          id: state.nextTowerId++,
-          def: item.def,
-          x, y,
-          lastFireAt: 0,
-          lastTickAt: performance.now(),
-          targetId: null,
-          cooldownMs: item.def.fireRate ? 1000 / item.def.fireRate : 0
-        };
-        state.towers.push(tower);
-        state.inventory = state.inventory.filter(i => i.uid !== state.selectedInvUid);
-        state.selectedInvUid = null;
-        this.drawTower(tower);
-        this.updateSidebar();
-      }
+      this.handleClick(pointer);
     });
 
     this.updateSidebar();
+    
+    console.log('Game initialized successfully!');
   }
 
-  drawGrid() {
-    const g = this.add.graphics();
-    g.lineStyle(1, 0x333355, 0.5);
+  drawBackground() {
+    const g = this.bgGraphics;
+    g.clear();
+    
+    // 网格
+    g.lineStyle(1, 0x333355, 0.3);
     for (let x = 0; x < GAME_W; x += 50) {
       g.moveTo(x, 0); g.lineTo(x, GAME_H);
     }
@@ -307,10 +295,8 @@ class GameScene extends Phaser.Scene {
       g.moveTo(0, y); g.lineTo(GAME_W, y);
     }
     g.strokePath();
-  }
 
-  drawPath() {
-    const g = this.add.graphics();
+    // 路径 - 外层
     g.lineStyle(48, 0x555577, 0.8);
     g.beginPath();
     g.moveTo(this.waypoints[0].x, this.waypoints[0].y);
@@ -319,21 +305,76 @@ class GameScene extends Phaser.Scene {
     }
     g.strokePath();
 
-    g.lineStyle(42, 0x6a6a88, 0.8);
+    // 路径 - 内层
+    g.lineStyle(42, 0x6a6a88, 0.6);
     g.strokePath();
 
-    // Spawn point
+    // 起点标记
     const sp = this.waypoints[0];
     g.fillStyle(0xff6b6b, 0.8);
-    g.fillCircle(sp.x + 20, sp.y, 20);
+    g.fillCircle(sp.x, sp.y, 20);
+    g.fillStyle(0xffffff, 1);
+    g.font = 'bold 12px Arial';
+    g.fillText('起点', sp.x - 15, sp.y + 4);
 
-    // Base
+    // 终点/基地
     const bp = this.waypoints[this.waypoints.length - 1];
     g.fillStyle(0x4ecdc4, 0.8);
-    g.fillCircle(bp.x - 20, bp.y, 25);
+    g.fillCircle(bp.x, bp.y, 25);
     g.fillStyle(0xffffff, 1);
     g.font = 'bold 14px Arial';
-    g.fillText('🏰', bp.x - 28, bp.y - 10);
+    g.fillText('🏰', bp.x - 10, bp.y - 10);
+  }
+
+  handleClick(pointer) {
+    if (state.gameOver) return;
+    
+    const x = pointer.x;
+    const y = pointer.y;
+
+    // 检查是否点击了已放置的塔
+    for (const t of state.towers) {
+      if (Math.hypot(t.x - x, t.y - y) < 22) {
+        state.selectedTowerId = t.id;
+        state.selectedInvUid = null;
+        this.updateSidebar();
+        return;
+      }
+    }
+
+    // 如果选中了背包中的塔，尝试放置
+    if (state.selectedInvUid !== null) {
+      const item = state.inventory.find(i => i.uid === state.selectedInvUid);
+      if (!item) return;
+      
+      if (!this.canPlaceAt(x, y)) {
+        this.showFloatingText(x, y, '❌ 不能放置', 0xff0000);
+        return;
+      }
+      if (state.gold < item.def.cost) {
+        this.showFloatingText(x, y, '💰 金币不足', 0xff0000);
+        return;
+      }
+      
+      state.gold -= item.def.cost;
+      state.towers.push({
+        id: state.nextTowerId++,
+        def: item.def,
+        x: x,
+        y: y,
+        lastFireAt: 0,
+        lastTickAt: performance.now(),
+        targetId: null,
+        cooldownMs: item.def.fireRate ? 1000 / item.def.fireRate : 0
+      });
+      state.inventory = state.inventory.filter(i => i.uid !== state.selectedInvUid);
+      state.selectedInvUid = null;
+      this.updateSidebar();
+    } else {
+      // 点击空地，取消选择
+      state.selectedTowerId = null;
+      this.updateSidebar();
+    }
   }
 
   canPlaceAt(x, y) {
@@ -343,50 +384,6 @@ class GameScene extends Phaser.Scene {
       if (Math.hypot(t.x - x, t.y - y) < 32) return false;
     }
     return true;
-  }
-
-  drawTower(t) {
-    const g = this.add.graphics();
-    g.fillStyle(t.def.color, 0.9);
-    g.fillCircle(t.x, t.y, 18);
-    g.lineStyle(2, 0xffffff, 1);
-    g.strokeCircle(t.x, t.y, 18);
-
-    // Category icon
-    const icons = { fort: '⚔', function: '❄', support: '⚑', mine: '💰' };
-    g.fillStyle(0xffffff, 1);
-    g.font = '14px Arial';
-    g.fillText(icons[t.def.category] || '?', t.x - 6, t.y - 5);
-
-    // Range indicator (when selected)
-    if (state.selectedTowerId === t.id && t.def.range > 0) {
-      g.lineStyle(1, 0xffff00, 0.3);
-      g.strokeCircle(t.x, t.y, this.effRange(t));
-    }
-  }
-
-  redrawTowers() {
-    // Remove old tower graphics
-    if (this.towerGraphics) this.towerGraphics.clear();
-    else this.towerGraphics = this.add.graphics();
-
-    for (const t of state.towers) {
-      const g = this.towerGraphics;
-      g.fillStyle(t.def.color, 0.9);
-      g.fillCircle(t.x, t.y, 18);
-      g.lineStyle(2, 0xffffff, 1);
-      g.strokeCircle(t.x, t.y, 18);
-
-      const icons = { fort: '⚔', function: '❄', support: '⚑', mine: '💰' };
-      g.fillStyle(0xffffff, 1);
-      g.font = '14px Arial';
-      g.fillText(icons[t.def.category] || '?', t.x - 6, t.y - 5);
-
-      if (state.selectedTowerId === t.id && t.def.range > 0) {
-        g.lineStyle(1, 0xffff00, 0.3);
-        g.strokeCircle(t.x, t.y, this.effRange(t));
-      }
-    }
   }
 
   effRange(t) {
@@ -433,13 +430,13 @@ class GameScene extends Phaser.Scene {
         continue;
       }
 
-      // DOT
+      // DOT 伤害
       if (m.dotPerSec > 0 && now < m.dotEndAt) {
         m.hp -= m.dotPerSec * dt;
         if (m.hp <= 0) { this.killMonster(m, now); toRemove.push(m.id); continue; }
       }
 
-      // Move along path
+      // 沿路径移动
       const target = this.nextPathTarget(m.x, m.y, m.pathIndex);
       if (!target) {
         this.onMonsterReachBase(m);
@@ -479,7 +476,8 @@ class GameScene extends Phaser.Scene {
   onMonsterReachBase(m) {
     const dmg = Math.max(1, Math.floor(m.def.hp / 40));
     state.baseHp -= dmg;
-    this.showFloatingText(this.waypoints[this.waypoints.length - 1].x, this.waypoints[this.waypoints.length - 1].y, `-${dmg}🏰`, 0xe74c3c);
+    const bp = this.waypoints[this.waypoints.length - 1];
+    this.showFloatingText(bp.x, bp.y - 30, `-${dmg}🏰`, 0xe74c3c);
     if (state.baseHp <= 0) {
       state.baseHp = 0;
       state.gameOver = true;
@@ -521,7 +519,7 @@ class GameScene extends Phaser.Scene {
         if (!m.alive || m.hp <= 0) continue;
         const d = Math.hypot(m.x - t.x, m.y - t.y);
         if (d > effR) continue;
-        const progress = m.pathIndex + (1 - Math.hypot(m.x - this.waypoints[this.waypoints.length - 1].x, m.y - this.waypoints[this.waypoints.length - 1].y) / GAME_W);
+        const progress = m.pathIndex + 1;
         if (progress > bestProgress) { bestProgress = progress; target = m; }
       }
 
@@ -665,7 +663,7 @@ class GameScene extends Phaser.Scene {
     const sp = this.waypoints[0];
     state.monsters.push({
       id: state.nextMonsterId++,
-      def,
+      def: def,
       hp: def.hp,
       maxHp: def.hp,
       pathIndex: 0,
@@ -763,7 +761,10 @@ class GameScene extends Phaser.Scene {
   }
 
   update(time, delta) {
-    if (state.paused || state.gameOver) return;
+    if (state.paused || state.gameOver) {
+      this.renderScene();
+      return;
+    }
     const dt = delta / 1000;
     const now = performance.now();
 
@@ -773,25 +774,49 @@ class GameScene extends Phaser.Scene {
     this.updateProjectiles(dt, now);
     this.updateFloatingTexts();
     this.checkWaveComplete();
-    this.redrawTowers();
-    this.updateSidebar();
+    
+    this.renderScene();
+    
+    // 每 500ms 更新一次侧边栏 UI，避免每帧重建 DOM
+    if (!this._lastSidebarUpdate || now - this._lastSidebarUpdate > 500) {
+      this.updateSidebar();
+      this._lastSidebarUpdate = now;
+    }
   }
 
-  render() {
-    // Clear and redraw game entities
-    if (this.renderGraphics) this.renderGraphics.clear();
-    else this.renderGraphics = this.add.graphics();
-
-    const g = this.renderGraphics;
+  renderScene() {
+    const g = this.gameGraphics;
+    g.clear();
     const now = performance.now();
 
-    // Draw monsters
+    // 绘制塔
+    for (const t of state.towers) {
+      g.fillStyle(t.def.color, 0.9);
+      g.fillCircle(t.x, t.y, 18);
+      g.lineStyle(2, 0xffffff, 1);
+      g.strokeCircle(t.x, t.y, 18);
+
+      const icons = { fort: '⚔', function: '❄', support: '⚑', mine: '💰' };
+      g.fillStyle(0xffffff, 1);
+      g.font = '14px Arial';
+      g.fillText(icons[t.def.category] || '?', t.x - 6, t.y - 5);
+
+      // 选中时显示射程
+      if (state.selectedTowerId === t.id && t.def.range > 0) {
+        g.lineStyle(1, 0xffff00, 0.3);
+        g.strokeCircle(t.x, t.y, this.effRange(t));
+      }
+    }
+
+    // 绘制怪物
     for (const m of state.monsters) {
       if (!m.alive || m.hp <= 0) continue;
       g.fillStyle(m.def.color, 1);
-      if (m.def.shape === 'circle') g.fillCircle(m.x, m.y, m.def.radius);
-      else if (m.def.shape === 'square') g.fillRect(m.x - m.def.radius, m.y - m.def.radius, m.def.radius * 2, m.def.radius * 2);
-      else if (m.def.shape === 'triangle') {
+      if (m.def.shape === 'circle') {
+        g.fillCircle(m.x, m.y, m.def.radius);
+      } else if (m.def.shape === 'square') {
+        g.fillRect(m.x - m.def.radius, m.y - m.def.radius, m.def.radius * 2, m.def.radius * 2);
+      } else if (m.def.shape === 'triangle') {
         g.beginPath();
         g.moveTo(m.x, m.y - m.def.radius);
         g.lineTo(m.x - m.def.radius, m.y + m.def.radius);
@@ -808,31 +833,31 @@ class GameScene extends Phaser.Scene {
         g.fillPath();
       }
 
-      // HP bar
+      // 血条
       const barW = m.def.radius * 2;
       const pct = Math.max(0, m.hp / m.maxHp);
       g.fillStyle(0x333333, 0.8);
-      g.fillRect(m.x - barW / 2, m.y - m.def.radius - 8, barW, 4);
+      g.fillRect(m.x - barW / 2, m.y - m.def.radius - 10, barW, 4);
       g.fillStyle(pct > 0.5 ? 0x2ecc71 : pct > 0.25 ? 0xf39c12 : 0xe74c3c, 1);
-      g.fillRect(m.x - barW / 2, m.y - m.def.radius - 8, barW * pct, 4);
+      g.fillRect(m.x - barW / 2, m.y - m.def.radius - 10, barW * pct, 4);
 
-      // Slow effect
+      // 减速特效
       if (now < m.slowUntil) {
         g.fillStyle(0x74b9ff, 0.4);
         g.fillCircle(m.x, m.y, m.def.radius + 4);
       }
     }
 
-    // Draw projectiles
+    // 绘制投射物
     for (const p of state.projectiles) {
       if (!p.alive) continue;
       g.fillStyle(p.color, 1);
       g.fillCircle(p.x, p.y, p.radius);
     }
 
-    // Draw beams
+    // 绘制光束
     for (const b of state.beams) {
-      const alpha = 1 - (now - b.bornAt) / b.ttl;
+      const alpha = Math.max(0, 1 - (now - b.bornAt) / b.ttl);
       g.lineStyle(3, b.color, alpha);
       g.beginPath();
       g.moveTo(b.fromX, b.fromY);
@@ -840,82 +865,125 @@ class GameScene extends Phaser.Scene {
       g.strokePath();
     }
 
-    // Draw floating texts
+    // 绘制浮动文字
     for (const ft of state.floatingTexts) {
-      const alpha = 1 - (now - ft.bornAt) / ft.ttl;
-      const offsetY = -(now - ft.bornAt) * 0.03;
+      const alpha = Math.max(0, 1 - (now - ft.bornAt) / ft.ttl);
+      const offsetY = -(now - ft.bornAt) * 0.04;
       g.fillStyle(ft.color, alpha);
       g.font = 'bold 14px Arial';
-      g.fillText(ft.text, ft.x - 20, ft.y + offsetY);
+      g.fillText(ft.text, ft.x - 25, ft.y + offsetY);
     }
   }
 }
 
 // ============ 启动游戏 ============
-const config = {
-  type: Phaser.AUTO,
-  width: GAME_W,
-  height: GAME_H,
-  scene: [GameScene],
-  backgroundColor: '#1a1a2e'
-};
+window.addEventListener('load', () => {
+  if (typeof Phaser === 'undefined') {
+    document.getElementById('loading-content').innerHTML = '<h1>❌ 加载失败</h1><p>无法加载 Phaser 游戏引擎，请检查网络连接后刷新页面</p>';
+    return;
+  }
 
-const game = new Phaser.Game(config);
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('game-wrap').style.display = 'flex';
 
-// UI 事件
-document.getElementById('btn-gacha-normal').onclick = () => {
-  if (state.gold < 10) { alert('💰 金币不足!'); return; }
-  state.gold -= 10;
-  const pool = GACHA_POOL.normal;
-  const total = pool.reduce((s, p) => s + p.weight, 0);
-  let r = Math.random() * total;
-  let picked = pool[0];
-  for (const entry of pool) { r -= entry.weight; if (r <= 0) { picked = entry; break; } }
-  const def = TOWER_MAP[picked.id];
-  state.inventory.push({ uid: state.nextUid++, def });
-  const scene = game.scene.getScene('GameScene');
-  scene.showFloatingText(GAME_W / 2, 40, `获得: ${def.name}`, def.color);
-  scene.updateSidebar();
-};
+  const config = {
+    type: Phaser.AUTO,
+    width: GAME_W,
+    height: GAME_H,
+    scene: [GameScene],
+    backgroundColor: '#1a1a2e',
+    pixelAntialias: true
+  };
 
-document.getElementById('btn-gacha-rare').onclick = () => {
-  if (state.gold < 50) { alert('💰 金币不足!'); return; }
-  state.gold -= 50;
-  const pool = GACHA_POOL.rare;
-  const total = pool.reduce((s, p) => s + p.weight, 0);
-  let r = Math.random() * total;
-  let picked = pool[0];
-  for (const entry of pool) { r -= entry.weight; if (r <= 0) { picked = entry; break; } }
-  const def = TOWER_MAP[picked.id];
-  state.inventory.push({ uid: state.nextUid++, def });
-  const scene = game.scene.getScene('GameScene');
-  scene.showFloatingText(GAME_W / 2, 40, `获得: ${def.name} [稀有!]`, def.color);
-  scene.updateSidebar();
-};
+  const game = new Phaser.Game(config);
+  game.scene.start('GameScene');
 
-document.getElementById('btn-start-wave').onclick = () => {
-  const scene = game.scene.getScene('GameScene');
-  scene.startNextWave();
-};
+  // 延迟获取场景引用，确保场景已创建
+  let sceneRef = null;
+  const getScene = () => {
+    if (!sceneRef) {
+      sceneRef = game.scene.getScene('GameScene');
+    }
+    return sceneRef;
+  };
 
-document.getElementById('btn-pause').onclick = () => {
-  state.paused = !state.paused;
-  document.getElementById('btn-pause').textContent = state.paused ? '▶ 继续' : '⏸ 暂停';
-};
+  // 等待场景就绪后绑定事件
+  const bindUI = () => {
+    const scene = getScene();
+    if (!scene || !scene.scene.isActive()) {
+      setTimeout(bindUI, 100);
+      return;
+    }
 
-document.getElementById('btn-sell-tower').onclick = () => {
-  if (state.selectedTowerId === null) return;
-  const idx = state.towers.findIndex(t => t.id === state.selectedTowerId);
-  if (idx < 0) return;
-  const t = state.towers[idx];
-  const refund = Math.floor(t.def.cost * 0.5);
-  state.gold += refund;
-  state.towers.splice(idx, 1);
-  state.selectedTowerId = null;
-  const scene = game.scene.getScene('GameScene');
-  scene.showFloatingText(t.x, t.y, `+${refund}💰`, 0xf1c40f);
-  scene.updateSidebar();
-};
+    // 抽卡-普通
+    document.getElementById('btn-gacha-normal').onclick = () => {
+      const sc = getScene();
+      if (!sc) return;
+      if (state.gold < 10) { alert('💰 金币不足!'); return; }
+      state.gold -= 10;
+      const pool = GACHA_POOL.normal;
+      const total = pool.reduce((s, p) => s + p.weight, 0);
+      let r = Math.random() * total;
+      let picked = pool[0];
+      for (const entry of pool) { r -= entry.weight; if (r <= 0) { picked = entry; break; } }
+      const def = TOWER_MAP[picked.id];
+      state.inventory.push({ uid: state.nextUid++, def });
+      sc.showFloatingText(GAME_W / 2, 40, `获得: ${def.name}`, def.color);
+      sc.updateSidebar();
+    };
+
+    // 抽卡-高级
+    document.getElementById('btn-gacha-rare').onclick = () => {
+      const sc = getScene();
+      if (!sc) return;
+      if (state.gold < 50) { alert('💰 金币不足!'); return; }
+      state.gold -= 50;
+      const pool = GACHA_POOL.rare;
+      const total = pool.reduce((s, p) => s + p.weight, 0);
+      let r = Math.random() * total;
+      let picked = pool[0];
+      for (const entry of pool) { r -= entry.weight; if (r <= 0) { picked = entry; break; } }
+      const def = TOWER_MAP[picked.id];
+      state.inventory.push({ uid: state.nextUid++, def });
+      sc.showFloatingText(GAME_W / 2, 40, `获得: ${def.name} [稀有!]`, def.color);
+      sc.updateSidebar();
+    };
+
+    // 开始波次
+    document.getElementById('btn-start-wave').onclick = () => {
+      const sc = getScene();
+      if (!sc) return;
+      sc.startNextWave();
+    };
+
+    // 暂停
+    document.getElementById('btn-pause').onclick = () => {
+      state.paused = !state.paused;
+      document.getElementById('btn-pause').textContent = state.paused ? '▶ 继续' : '⏸ 暂停';
+    };
+
+    // 出售塔
+    document.getElementById('btn-sell-tower').onclick = () => {
+      const sc = getScene();
+      if (!sc) return;
+      if (state.selectedTowerId === null) return;
+      const idx = state.towers.findIndex(t => t.id === state.selectedTowerId);
+      if (idx < 0) return;
+      const t = state.towers[idx];
+      const refund = Math.floor(t.def.cost * 0.5);
+      state.gold += refund;
+      state.towers.splice(idx, 1);
+      state.selectedTowerId = null;
+      sc.showFloatingText(t.x, t.y, `+${refund}💰`, 0xf1c40f);
+      sc.updateSidebar();
+    };
+
+    console.log('UI bindings ready, game scene active:', scene.scene.isActive());
+  };
+
+  // 给 Phaser 一些初始化时间
+  setTimeout(bindUI, 500);
+});
 </script>
 </body>
 </html>
