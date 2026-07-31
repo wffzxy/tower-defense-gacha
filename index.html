@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>塔防抽卡 · Tower Defense Gacha</title>
+  <link rel="stylesheet" href="./src/ui/hud.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="game-container"></div>
+
+    <!-- 顶部 HUD -->
+    <div id="hud-top" class="hud-bar">
+      <div class="stat">
+        <span class="stat-icon gold">💰</span>
+        <span class="stat-label">金币</span>
+        <span id="stat-gold" class="stat-value">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-icon score">⭐</span>
+        <span class="stat-label">积分</span>
+        <span id="stat-score" class="stat-value">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-icon wave">🌊</span>
+        <span class="stat-label">波次</span>
+        <span id="stat-wave" class="stat-value">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-icon base">🏰</span>
+        <span class="stat-label">基地</span>
+        <span id="stat-base" class="stat-value">20</span>
+      </div>
+      <div class="stat-group">
+        <button id="btn-gacha-normal" class="btn btn-gacha">普通抽卡 (10)</button>
+        <button id="btn-gacha-rare" class="btn btn-gacha rare">高级抽卡 (50)</button>
+        <button id="btn-start-wave" class="btn btn-wave">下一波</button>
+        <button id="btn-pause" class="btn btn-ghost">暂停</button>
+      </div>
+    </div>
+
+    <!-- 底部塔栏 -->
+    <div id="hud-bottom" class="hud-bar bottom">
+      <div id="inventory" class="inventory">
+        <div class="inv-empty">点击「抽卡」获得塔，再点击背包中的塔放置到地图</div>
+      </div>
+      <div id="tower-info" class="tower-info hidden">
+        <div class="ti-title" id="ti-name"></div>
+        <div class="ti-row"><span>类型</span><span id="ti-type"></span></div>
+        <div class="ti-row"><span>稀有度</span><span id="ti-rarity"></span></div>
+        <div class="ti-row"><span>说明</span><span id="ti-desc"></span></div>
+        <div class="ti-row"><span>花费</span><span id="ti-cost"></span></div>
+        <button id="btn-sell" class="btn btn-sell">出售 (返还50%)</button>
+      </div>
+    </div>
+
+    <!-- 抽卡结果弹窗 -->
+    <div id="gacha-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2>抽卡结果</h2>
+        <div id="gacha-result"></div>
+        <button id="btn-close-gacha" class="btn btn-primary">确认</button>
+      </div>
+    </div>
+
+    <!-- 游戏结束弹窗 -->
+    <div id="gameover-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2 id="gameover-title">游戏结束</h2>
+        <div id="gameover-summary"></div>
+        <button id="btn-restart" class="btn btn-primary">重新开始</button>
+      </div>
+    </div>
+
+    <!-- 提示 toast -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
