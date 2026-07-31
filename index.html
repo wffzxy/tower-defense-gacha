@@ -34,6 +34,8 @@
   .cat-support { background: #f39c12; color: white; }
   .cat-mine { background: #f1c40f; color: #333; }
   #gameover { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.9); padding: 30px 50px; border-radius: 12px; text-align: center; display: none; z-index: 100; pointer-events: auto; }
+  #gameover.show { pointer-events: auto; }
+  #gameover.hidden { pointer-events: none; }
   #gameover h2 { font-size: 28px; color: #e94560; margin-bottom: 15px; }
   #gameover p { font-size: 16px; margin: 8px 0; }
   .tower-info { font-size: 11px; color: #bbb; margin-top: 4px; }
@@ -265,25 +267,41 @@ class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
   create() {
-    // 保存全局引用，供 UI 按钮回调使用
     window.__gameScene = this;
     
     this.waypoints = buildPath(GAME_W, GAME_H);
     
-    // 创建渲染层（避免每帧重建）
     this.bgGraphics = this.add.graphics();
     this.gameGraphics = this.add.graphics();
     
     this.drawBackground();
     
-    // 输入处理
-    this.input.on('pointerdown', (pointer) => {
-      this.handleClick(pointer);
+    // 用 raw canvas 事件代替 Phaser 输入系统（更可靠）
+    const canvas = this.sys.game.canvas;
+    canvas.style.cursor = 'crosshair';
+    
+    this.mouseX = 0;
+    this.mouseY = 0;
+    
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      this.mouseX = (e.clientX - rect.left) * scaleX;
+      this.mouseY = (e.clientY - rect.top) * scaleY;
+    });
+    
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+      this.handleClick(x, y);
     });
 
     this.updateSidebar();
-    
-    console.log('Game initialized successfully!');
+    console.log('Game initialized! Canvas size:', canvas.width, 'x', canvas.height);
   }
 
   drawBackground() {
@@ -330,12 +348,9 @@ class GameScene extends Phaser.Scene {
     g.fillText('🏰', bp.x - 10, bp.y - 10);
   }
 
-  handleClick(pointer) {
+  handleClick(x, y) {
     if (state.gameOver) return;
-    
-    const x = pointer.x;
-    const y = pointer.y;
-    console.log('Canvas click:', x, y, 'selectedInvUid:', state.selectedInvUid);
+    console.log('Canvas click:', x.toFixed(0), y.toFixed(0), 'selectedInvUid:', state.selectedInvUid);
 
     for (const t of state.towers) {
       if (Math.hypot(t.x - x, t.y - y) < 22) {
@@ -373,7 +388,7 @@ class GameScene extends Phaser.Scene {
       state.inventory = state.inventory.filter(i => i.uid !== state.selectedInvUid);
       state.selectedInvUid = null;
       this.updateSidebar();
-      console.log('Tower placed at:', x, y);
+      console.log('✅ Tower placed at:', x.toFixed(0), y.toFixed(0));
     } else {
       state.selectedTowerId = null;
       this.updateSidebar();
@@ -805,10 +820,31 @@ class GameScene extends Phaser.Scene {
       g.font = '14px Arial';
       g.fillText(icons[t.def.category] || '?', t.x - 6, t.y - 5);
 
-      // 选中时显示射程
       if (state.selectedTowerId === t.id && t.def.range > 0) {
         g.lineStyle(1, 0xffff00, 0.3);
         g.strokeCircle(t.x, t.y, this.effRange(t));
+      }
+    }
+
+    // 放置预览
+    if (state.selectedInvUid !== null) {
+      const item = state.inventory.find(i => i.uid === state.selectedInvUid);
+      if (item) {
+        const px = this.mouseX;
+        const py = this.mouseY;
+        const canPlace = this.canPlaceAt(px, py);
+        const costOk = state.gold >= item.def.cost;
+        const ok = canPlace && costOk;
+        
+        g.fillStyle(item.def.color, ok ? 0.6 : 0.3);
+        g.fillCircle(px, py, 18);
+        g.lineStyle(2, ok ? 0x00ff00 : 0xff0000, 1);
+        g.strokeCircle(px, py, 18);
+        
+        if (item.def.range > 0) {
+          g.lineStyle(1, ok ? 0x00ff00 : 0xff0000, 0.3);
+          g.strokeCircle(px, py, item.def.range);
+        }
       }
     }
 
