@@ -264,6 +264,9 @@ class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
   create() {
+    // 保存全局引用，供 UI 按钮回调使用
+    window.__gameScene = this;
+    
     this.waypoints = buildPath(GAME_W, GAME_H);
     
     // 创建渲染层（避免每帧重建）
@@ -896,94 +899,66 @@ window.addEventListener('load', () => {
     pixelAntialias: true
   };
 
-  const game = new Phaser.Game(config);
-  game.scene.start('GameScene');
+  window.__phaserGame = new Phaser.Game(config);
 
-  // 延迟获取场景引用，确保场景已创建
-  let sceneRef = null;
-  const getScene = () => {
-    if (!sceneRef) {
-      sceneRef = game.scene.getScene('GameScene');
-    }
-    return sceneRef;
+  // 直接绑定 UI 事件 —— 从 window.__gameScene 获取场景引用
+  document.getElementById('btn-gacha-normal').onclick = () => {
+    const sc = window.__gameScene;
+    if (!sc) return;
+    if (state.gold < 10) { alert('💰 金币不足!'); return; }
+    state.gold -= 10;
+    const pool = GACHA_POOL.normal;
+    const total = pool.reduce((s, p) => s + p.weight, 0);
+    let r = Math.random() * total;
+    let picked = pool[0];
+    for (const entry of pool) { r -= entry.weight; if (r <= 0) { picked = entry; break; } }
+    const def = TOWER_MAP[picked.id];
+    state.inventory.push({ uid: state.nextUid++, def });
+    sc.showFloatingText(GAME_W / 2, 40, `获得: ${def.name}`, def.color);
+    sc.updateSidebar();
   };
 
-  // 等待场景就绪后绑定事件
-  const bindUI = () => {
-    const scene = getScene();
-    if (!scene || !scene.scene.isActive()) {
-      setTimeout(bindUI, 100);
-      return;
-    }
-
-    // 抽卡-普通
-    document.getElementById('btn-gacha-normal').onclick = () => {
-      const sc = getScene();
-      if (!sc) return;
-      if (state.gold < 10) { alert('💰 金币不足!'); return; }
-      state.gold -= 10;
-      const pool = GACHA_POOL.normal;
-      const total = pool.reduce((s, p) => s + p.weight, 0);
-      let r = Math.random() * total;
-      let picked = pool[0];
-      for (const entry of pool) { r -= entry.weight; if (r <= 0) { picked = entry; break; } }
-      const def = TOWER_MAP[picked.id];
-      state.inventory.push({ uid: state.nextUid++, def });
-      sc.showFloatingText(GAME_W / 2, 40, `获得: ${def.name}`, def.color);
-      sc.updateSidebar();
-    };
-
-    // 抽卡-高级
-    document.getElementById('btn-gacha-rare').onclick = () => {
-      const sc = getScene();
-      if (!sc) return;
-      if (state.gold < 50) { alert('💰 金币不足!'); return; }
-      state.gold -= 50;
-      const pool = GACHA_POOL.rare;
-      const total = pool.reduce((s, p) => s + p.weight, 0);
-      let r = Math.random() * total;
-      let picked = pool[0];
-      for (const entry of pool) { r -= entry.weight; if (r <= 0) { picked = entry; break; } }
-      const def = TOWER_MAP[picked.id];
-      state.inventory.push({ uid: state.nextUid++, def });
-      sc.showFloatingText(GAME_W / 2, 40, `获得: ${def.name} [稀有!]`, def.color);
-      sc.updateSidebar();
-    };
-
-    // 开始波次
-    document.getElementById('btn-start-wave').onclick = () => {
-      const sc = getScene();
-      if (!sc) return;
-      sc.startNextWave();
-    };
-
-    // 暂停
-    document.getElementById('btn-pause').onclick = () => {
-      state.paused = !state.paused;
-      document.getElementById('btn-pause').textContent = state.paused ? '▶ 继续' : '⏸ 暂停';
-    };
-
-    // 出售塔
-    document.getElementById('btn-sell-tower').onclick = () => {
-      const sc = getScene();
-      if (!sc) return;
-      if (state.selectedTowerId === null) return;
-      const idx = state.towers.findIndex(t => t.id === state.selectedTowerId);
-      if (idx < 0) return;
-      const t = state.towers[idx];
-      const refund = Math.floor(t.def.cost * 0.5);
-      state.gold += refund;
-      state.towers.splice(idx, 1);
-      state.selectedTowerId = null;
-      sc.showFloatingText(t.x, t.y, `+${refund}💰`, 0xf1c40f);
-      sc.updateSidebar();
-    };
-
-    console.log('UI bindings ready, game scene active:', scene.scene.isActive());
+  document.getElementById('btn-gacha-rare').onclick = () => {
+    const sc = window.__gameScene;
+    if (!sc) return;
+    if (state.gold < 50) { alert('💰 金币不足!'); return; }
+    state.gold -= 50;
+    const pool = GACHA_POOL.rare;
+    const total = pool.reduce((s, p) => s + p.weight, 0);
+    let r = Math.random() * total;
+    let picked = pool[0];
+    for (const entry of pool) { r -= entry.weight; if (r <= 0) { picked = entry; break; } }
+    const def = TOWER_MAP[picked.id];
+    state.inventory.push({ uid: state.nextUid++, def });
+    sc.showFloatingText(GAME_W / 2, 40, `获得: ${def.name} [稀有!]`, def.color);
+    sc.updateSidebar();
   };
 
-  // 给 Phaser 一些初始化时间
-  setTimeout(bindUI, 500);
+  document.getElementById('btn-start-wave').onclick = () => {
+    const sc = window.__gameScene;
+    if (!sc) return;
+    sc.startNextWave();
+  };
+
+  document.getElementById('btn-pause').onclick = () => {
+    state.paused = !state.paused;
+    document.getElementById('btn-pause').textContent = state.paused ? '▶ 继续' : '⏸ 暂停';
+  };
+
+  document.getElementById('btn-sell-tower').onclick = () => {
+    const sc = window.__gameScene;
+    if (!sc) return;
+    if (state.selectedTowerId === null) return;
+    const idx = state.towers.findIndex(t => t.id === state.selectedTowerId);
+    if (idx < 0) return;
+    const t = state.towers[idx];
+    const refund = Math.floor(t.def.cost * 0.5);
+    state.gold += refund;
+    state.towers.splice(idx, 1);
+    state.selectedTowerId = null;
+    sc.showFloatingText(t.x, t.y, `+${refund}💰`, 0xf1c40f);
+    sc.updateSidebar();
+  };
 });
 </script>
 </body>
